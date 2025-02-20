@@ -321,6 +321,6 @@ if (!isset($_GET['page'])) {
 }
 echo "<footer>";
 echo "Nombre de requêtes : " . DB::$queryCount . "<br>";
-echo "Temps total des requêtes : " . round(DB::$totalTime, 5) . " secondes";
+echo "Temps total des requêtes : " . round(DB::$totalTime * 1000, 2) . " millisecondes";
 echo "</footer>";
 ?>
