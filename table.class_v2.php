@@ -3,24 +3,46 @@ header('Content-Type: text/html; charset=utf-8');
 
 /*
  * Classe DB
- * Centralise la connexion à la base de données
+ * Centralise la connexion unique et enregistre les requêtes exécutées.
  */
 class DB
 {
+    private static ?mysqli $connection = null;
+    public static array $queryLog = [];
+    public static int $queryCount = 0;
+    public static float $totalTime = 0.0;
+
+    // Retourne la connexion unique (singleton)
     public static function getConnection(): mysqli
     {
-        $link = new mysqli('localhost', 'root', '', 'cinema');
-        if ($link->connect_error) {
-            die("Connection failed: " . $link->connect_error);
+        if (self::$connection === null) {
+            self::$connection = new mysqli('localhost', 'root', '', 'cinema');
+            if (self::$connection->connect_error) {
+                die("Connection failed: " . self::$connection->connect_error);
+            }
+            self::$connection->set_charset("utf8");
         }
-        $link->set_charset("utf8");
-        return $link;
+        return self::$connection;
+    }
+
+    // Exécute une requête SQL en enregistrant sa durée et en l'ajoutant au log
+    public static function query(string $sql): mysqli_result|bool
+    {
+        $link = self::getConnection();
+        $start = microtime(true);
+        $result = mysqli_query($link, $sql);
+        $end = microtime(true);
+        $elapsed = $end - $start;
+        self::$queryLog[] = $sql;
+        self::$queryCount++;
+        self::$totalTime += $elapsed;
+        return $result;
     }
 }
 
 /*
  * Classe abstraite Table
- * Contient les méthodes génériques pour manipuler une table de la base de données
+ * Fournit des méthodes génériques pour manipuler une table.
  */
 abstract class Table
 {
@@ -28,82 +50,43 @@ abstract class Table
     public static string $tableName;
 
     /*
-     * Récupère un enregistrement par son identifiant
+     * Retourne un enregistrement sous forme de tableau associatif par son identifiant.
      */
     public static function getOne(int $id): ?array
     {
-        $link = DB::getConnection();
         $primaryKey = static::$primaryKey;
         $tableName = static::$tableName;
-
-        $query = "SELECT * FROM $tableName WHERE $primaryKey = $id";
-        $res = mysqli_query($link, $query);
+        $sql = "SELECT * FROM $tableName WHERE $primaryKey = " . (int) $id;
+        $res = DB::query($sql);
         if (!$res) {
-            die("Query failed: " . mysqli_error($link));
+            die("Query failed: " . mysqli_error(DB::getConnection()));
         }
         $line = mysqli_fetch_assoc($res);
-        mysqli_close($link);
         return $line ? $line : null;
     }
 
     /*
-     * Récupère tous les enregistrements de la table
+     * Retourne tous les enregistrements de la table sous forme de tableaux associatifs.
      */
     public static function getAll(): array
     {
-        $link = DB::getConnection();
         $tableName = static::$tableName;
-        $query = "SELECT * FROM $tableName";
-        $res = mysqli_query($link, $query);
+        $sql = "SELECT * FROM $tableName";
+        $res = DB::query($sql);
         if (!$res) {
-            die("Query failed: " . mysqli_error($link));
+            die("Query failed: " . mysqli_error(DB::getConnection()));
         }
         $lines = [];
         while ($line = mysqli_fetch_assoc($res)) {
             $lines[] = $line;
         }
-        mysqli_close($link);
         return $lines;
-    }
-
-    /*
-     * Hydrate l'objet avec les données de la base de données
-     * Pour éviter la création de propriétés dynamiques, seules les propriétés déclarées
-     * explicitement dans la classe seront affectées.
-     */
-    public function hydrate(): void
-    {
-        $link = DB::getConnection();
-        $primaryKey = static::$primaryKey;
-        $tableName = static::$tableName;
-
-        if (!isset($this->$primaryKey)) {
-            mysqli_close($link);
-            return;
-        }
-
-        $id = (int) $this->$primaryKey;
-        $query = "SELECT * FROM $tableName WHERE $primaryKey = $id";
-        $res = mysqli_query($link, $query);
-        if (!$res) {
-            die("Query failed: " . mysqli_error($link));
-        }
-        $data = mysqli_fetch_assoc($res);
-        if ($data) {
-            foreach ($data as $key => $value) {
-                if (property_exists($this, $key)) {
-                    $this->$key = $value;
-                }
-            }
-        }
-        mysqli_close($link);
     }
 }
 
 /*
  * Classe Film
- * Hérite de Table et définit la table et la clé primaire associées.
- * Les propriétés sont déclarées explicitement pour éviter la création dynamique.
+ * Représente un film et permet, via l'ORM, de l'hydrater et d'associer son genre.
  */
 class Film extends Table
 {
@@ -120,15 +103,91 @@ class Film extends Table
     public ?int $duree_minutes = null;
     public ?int $annee_production = null;
 
+    // Pour le chargement lazy/eager du genre associé
+    public ?Genre $genre = null;
+
     public function __construct()
     {
+        // Constructeur vide
+    }
+
+    // Hydrate l'objet Film à partir d'un tableau associatif
+    public function hydrateFromArray(array $data): void
+    {
+        foreach ($data as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->$key = $value;
+            }
+        }
+    }
+
+    /*
+     * Retourne tous les films sous forme d'objets Film.
+     * Si $eager est true, précharge en une seule requête les genres associés.
+     */
+    public static function getAll(bool $eager = false): array
+    {
+        $filmDataList = parent::getAll();
+        $films = [];
+        foreach ($filmDataList as $data) {
+            $film = new Film();
+            $film->hydrateFromArray($data);
+            $films[] = $film;
+        }
+        if ($eager) {
+            // Récupère tous les id_genre uniques
+            $genreIds = [];
+            foreach ($films as $film) {
+                if ($film->id_genre !== null) {
+                    $genreIds[] = $film->id_genre;
+                }
+            }
+            $genreIds = array_unique($genreIds);
+            if (count($genreIds) > 0) {
+                $ids = implode(',', $genreIds);
+                $sql = "SELECT * FROM " . Genre::$tableName . " WHERE " . Genre::$primaryKey . " IN ($ids)";
+                $res = DB::query($sql);
+                if (!$res) {
+                    die("Query failed: " . mysqli_error(DB::getConnection()));
+                }
+                $genreMap = [];
+                while ($row = mysqli_fetch_assoc($res)) {
+                    $genre = new Genre();
+                    $genre->hydrateFromArray($row);
+                    $genreMap[$genre->id_genre] = $genre;
+                }
+                // Associe à chaque film son objet Genre préchargé
+                foreach ($films as $film) {
+                    if (isset($genreMap[$film->id_genre])) {
+                        $film->genre = $genreMap[$film->id_genre];
+                    }
+                }
+            }
+        }
+        return $films;
+    }
+
+    /*
+     * Chargement lazy : retourne l'objet Genre associé.
+     * Si non chargé, effectue une requête pour l'hydrater.
+     */
+    public function getGenre(): ?Genre
+    {
+        if ($this->genre === null && $this->id_genre !== null) {
+            $data = Genre::getOne($this->id_genre);
+            if ($data) {
+                $genre = new Genre();
+                $genre->hydrateFromArray($data);
+                $this->genre = $genre;
+            }
+        }
+        return $this->genre;
     }
 }
 
 /*
  * Classe Genre
- * Hérite de Table et définit la table et la clé primaire associées.
- * Les propriétés sont déclarées explicitement pour éviter la création dynamique.
+ * Représente un genre de film.
  */
 class Genre extends Table
 {
@@ -140,10 +199,21 @@ class Genre extends Table
 
     public function __construct()
     {
+        // Constructeur vide
+    }
+
+    // Hydrate l'objet Genre à partir d'un tableau associatif
+    public function hydrateFromArray(array $data): void
+    {
+        foreach ($data as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->$key = $value;
+            }
+        }
     }
 
     /*
-     * Enregistre (insert ou update) un genre dans la base de données
+     * Méthode d'enregistrement (insert/update) d'un genre.
      */
     public function save(): void
     {
@@ -151,7 +221,6 @@ class Genre extends Table
         $primaryKey = static::$primaryKey;
         $tableName = static::$tableName;
         $vars = get_object_vars($this);
-
         if (isset($this->$primaryKey) && !is_null($this->$primaryKey)) {
             // UPDATE
             $query = "UPDATE $tableName SET ";
@@ -175,24 +244,19 @@ class Genre extends Table
             }
             $query = "INSERT INTO $tableName (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $values) . ")";
         }
-
-        if (!mysqli_query($link, $query)) {
-            die("Query failed: " . mysqli_error($link));
+        if (!DB::query($query)) {
+            die("Query failed: " . mysqli_error(DB::getConnection()));
         }
-
         echo $query . '<br>';
-
-        if ((!isset($this->$primaryKey) || is_null($this->$primaryKey)) && mysqli_affected_rows($link) > 0) {
-            $this->$primaryKey = mysqli_insert_id($link);
+        if ((!isset($this->$primaryKey) || is_null($this->$primaryKey)) && mysqli_affected_rows(DB::getConnection()) > 0) {
+            $this->$primaryKey = mysqli_insert_id(DB::getConnection());
         }
-        mysqli_close($link);
     }
 }
 
 /*
  * Classe Distributeur
- * Hérite de Table et définit la table et la clé primaire associées.
- * Les propriétés sont déclarées explicitement pour éviter la création dynamique.
+ * Représente un distributeur de films.
  */
 class Distributeur extends Table
 {
@@ -204,44 +268,65 @@ class Distributeur extends Table
 
     public function __construct()
     {
+        // Constructeur vide
     }
 }
 
 /*
+ * ---------------------------
  * Code de l'application
- * Affiche la liste des films, les détails d'un film, la liste des genres, etc.
+ * ---------------------------
  */
+
+// Inclusion du fichier CSS pour le style en grid (4 colonnes par row)
+echo '<link rel="stylesheet" type="text/css" href="style.css">';
+
 if (!isset($_GET['page'])) {
     echo '<h1>Liste des films du cinéma</h1><br>';
-    $films = Film::getAll();
-    foreach ($films as $filmData) {
-        echo '<a href="?page=film&id_film=' . $filmData['id_film'] . '">' . $filmData['titre'] . '</a><br>';
+    // Chargement eager : les films sont préchargés avec leur genre associé
+    $films = Film::getAll(true);
+    echo '<div class="grid-container">';
+    foreach ($films as $film) {
+        echo '<div class="grid-item">';
+        echo '<a href="?page=film&id_film=' . $film->id_film . '">' . $film->titre . '</a>';
+        if ($film->genre !== null) {
+            echo '<p>Genre : ' . $film->genre->nom . '</p>';
+        }
+        echo '</div>';
     }
+    echo '</div>';
 } elseif ($_GET['page'] == 'film') {
     $filmData = Film::getOne((int) $_GET['id_film']);
     if ($filmData) {
         $film = new Film();
-        $film->id_film = (int) $filmData['id_film'];
-        $film->hydrate();
+        $film->hydrateFromArray($filmData);
+        // Lazy loading du genre : chargé seulement à la demande
+        $genre = $film->getGenre();
         echo '<h1>Détails du film "' . $film->titre . '"</h1><br>';
         echo '<pre>';
         var_dump($film);
         echo '</pre>';
+        if ($genre !== null) {
+            echo '<p>Genre : ' . $genre->nom . '</p>';
+        }
     } else {
         echo "Film non trouvé.";
     }
 } elseif ($_GET['page'] == 'genres') {
     echo '<h1>Liste des genres de films du cinéma</h1><br>';
-    $genres = Genre::getAll();
-    foreach ($genres as $genreData) {
-        echo '<a href="?page=genre&id_genre=' . $genreData['id_genre'] . '">' . $genreData['nom'] . '</a><br>';
+    $genreDataList = Genre::getAll();
+    echo '<div class="grid-container">';
+    foreach ($genreDataList as $genreData) {
+        echo '<div class="grid-item">';
+        echo '<a href="?page=genre&id_genre=' . $genreData['id_genre'] . '">' . $genreData['nom'] . '</a>';
+        echo '</div>';
     }
+    echo '</div>';
 } elseif ($_GET['page'] == 'genre') {
     $genreData = Genre::getOne((int) $_GET['id_genre']);
     if ($genreData) {
         $genre = new Genre();
-        $genre->id_genre = (int) $genreData['id_genre'];
-        $genre->hydrate();
+        $genre->hydrateFromArray($genreData);
         echo '<h1>Détails du genre de film "' . $genre->nom . '"</h1><br>';
         echo '<pre>';
         var_dump($genre);
@@ -250,19 +335,35 @@ if (!isset($_GET['page'])) {
         echo "Genre non trouvé.";
     }
 } elseif ($_GET['page'] == 'add_genre_raw_code') {
+    // Test d'ajout/mise à jour d'un genre
     $genre = new Genre();
     $genre->nom = 'heroic fantaisie';
     $genre->save();
-
     $genre->nom = 'heroic fantaisy';
     $genre->save();
 } elseif ($_GET['page'] == 'hydrate_film') {
+    // Test de l'hydratation d'un film (lazy loading du genre)
     $film = new Film();
     $film->id_film = 3571;
-    $film->hydrate();
-
-    echo '<pre>';
-    var_dump($film);
-    echo '</pre>';
+    $filmData = Film::getOne($film->id_film);
+    if ($filmData) {
+        $film->hydrateFromArray($filmData);
+        echo '<h1>Détails du film "' . $film->titre . '" (lazy loading)</h1><br>';
+        echo '<pre>';
+        var_dump($film);
+        echo '</pre>';
+        $genre = $film->getGenre();
+        if ($genre !== null) {
+            echo '<p>Genre : ' . $genre->nom . '</p>';
+        }
+    } else {
+        echo "Film non trouvé.";
+    }
 }
+
+// Affichage des statistiques de requêtes en pied de page
+echo "<footer>";
+echo "Nombre de requêtes : " . DB::$queryCount . "<br>";
+echo "Temps total des requêtes : " . round(DB::$totalTime, 5) . " secondes<br>";
+echo "</footer>";
 ?>
