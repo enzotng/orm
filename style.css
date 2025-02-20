@@ -71,6 +71,7 @@ p {
 
 pre {
     margin: 0;
+    text-wrap: auto;
 }
 
 .pagination {
