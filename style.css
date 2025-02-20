@@ -29,20 +29,17 @@ body {
     justify-content: space-between;
 }
 
-/* Titre principal */
 h1 {
     color: var(--primary-color);
     margin: 0;
 }
 
-/* Container de la grille : 4 items par ligne */
 .grid-container {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1rem;
 }
 
-/* Style pour chaque item de la grille */
 .grid-item {
     background-color: var(--white-color-75);
     border: 1px solid var(--black-color-25);
@@ -55,10 +52,13 @@ h1 {
     flex-direction: column;
     gap: 1rem;
     text-align: center;
+    transition: all 0.3s;
+    cursor: pointer;
 }
 
 .grid-item:hover {
-    background-color: var(--white-color-25);
+    background-color: var(--white-color-10);
+    border-color: var(--black-color-50);
 }
 
 .grid-item h2 {
@@ -82,7 +82,6 @@ pre {
     width: 100%;
 }
 
-/* Liens stylisés */
 a {
     color: var(--primary-color);
     text-decoration: none;
@@ -92,10 +91,9 @@ a {
 }
 
 .grid-item>p>span {
-    color: black;
+    color: var(--black-color-75);
 }
 
-/* Pied de page */
 footer {
     font-size: 0.9rem;
     color: var(--black-color-50);
