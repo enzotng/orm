@@ -109,10 +109,6 @@ class Film extends Table
     public ?int $annee_production = null;
     private ?Genre $genre = null;
 
-    public function __construct()
-    {
-    }
-
     public function hydrateFromArray(array $data): void
     {
         foreach ($data as $key => $value) {
@@ -151,10 +147,6 @@ class Genre extends Table
 
     public ?int $id_genre = null;
     public ?string $nom = null;
-
-    public function __construct()
-    {
-    }
 
     public function hydrateFromArray(array $data): void
     {
@@ -209,10 +201,6 @@ class Distributeur extends Table
 
     public ?int $id_distributeur = null;
     public ?string $nom = null;
-
-    public function __construct()
-    {
-    }
 }
 
 function renderPagination(int $currentPage, int $totalPages): string
