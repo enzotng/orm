@@ -22,7 +22,7 @@ body {
     background-color: var(--background-color);
     margin: 0;
     padding: var(--padding);
-    height: 100dvh;
+    height: calc(100dvh - var(--padding));
     overflow: hidden;
     display: flex;
     flex-direction: column;
