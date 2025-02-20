@@ -51,7 +51,7 @@ h1 {
     align-items: center;
     justify-content: center;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 1rem;
     text-align: center;
     transition: all 0.3s;
     cursor: pointer;
@@ -64,6 +64,8 @@ h1 {
 
 .grid-item h2 {
     color: var(--black-color-75);
+    margin: 0;
+    font-size: 1.25rem;
 }
 
 p {
