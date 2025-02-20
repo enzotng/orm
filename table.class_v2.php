@@ -2,13 +2,15 @@
 header('Content-Type: text/html; charset=utf-8');
 echo '<title>Balek\'Flix, Explore our knowledge</title>';
 
-class DB {
+class DB
+{
     private static ?mysqli $connection = null;
     public static array $queryLog = [];
     public static int $queryCount = 0;
     public static float $totalTime = 0.0;
-    
-    public static function getConnection(): mysqli {
+
+    public static function getConnection(): mysqli
+    {
         if (self::$connection === null) {
             self::$connection = new mysqli('localhost', 'root', '', 'cinema');
             if (self::$connection->connect_error) {
@@ -18,8 +20,9 @@ class DB {
         }
         return self::$connection;
     }
-    
-    public static function query(string $sql): mysqli_result|bool {
+
+    public static function query(string $sql): mysqli_result|bool
+    {
         $link = self::getConnection();
         $start = microtime(true);
         $result = mysqli_query($link, $sql);
@@ -32,18 +35,20 @@ class DB {
     }
 }
 
-abstract class Table {
+abstract class Table
+{
     public static string $primaryKey;
     public static string $tableName;
     protected static array $cache = [];
-    
-    public static function getAll(?int $limit = null, ?int $offset = null): array {
+
+    public static function getAll(?int $limit = null, ?int $offset = null): array
+    {
         $tableName = static::$tableName;
         $sql = "SELECT * FROM $tableName";
         if ($limit !== null) {
-            $sql .= " LIMIT " . (int)$limit;
+            $sql .= " LIMIT " . (int) $limit;
             if ($offset !== null) {
-                $sql .= " OFFSET " . (int)$offset;
+                $sql .= " OFFSET " . (int) $offset;
             }
         }
         $res = DB::query($sql);
@@ -58,8 +63,9 @@ abstract class Table {
         }
         return $objects;
     }
-    
-    public static function countAll(): int {
+
+    public static function countAll(): int
+    {
         $tableName = static::$tableName;
         $sql = "SELECT COUNT(*) as total FROM $tableName";
         $res = DB::query($sql);
@@ -67,16 +73,17 @@ abstract class Table {
             die("Query failed: " . mysqli_error(DB::getConnection()));
         }
         $data = mysqli_fetch_assoc($res);
-        return (int)$data['total'];
+        return (int) $data['total'];
     }
-    
-    public static function getOne(int $id): ?static {
+
+    public static function getOne(int $id): ?static
+    {
         if (isset(static::$cache[$id])) {
             return static::$cache[$id];
         }
         $primaryKey = static::$primaryKey;
         $tableName = static::$tableName;
-        $sql = "SELECT * FROM $tableName WHERE $primaryKey = " . (int)$id;
+        $sql = "SELECT * FROM $tableName WHERE $primaryKey = " . (int) $id;
         $res = DB::query($sql);
         if (!$res) {
             die("Query failed: " . mysqli_error(DB::getConnection()));
@@ -92,7 +99,8 @@ abstract class Table {
     }
 }
 
-class Film extends Table {
+class Film extends Table
+{
     public static string $primaryKey = 'id_film';
     public static string $tableName = 'films';
     public ?int $id_film = null;
@@ -105,18 +113,18 @@ class Film extends Table {
     public ?int $duree_minutes = null;
     public ?int $annee_production = null;
     private ?Genre $genre = null;
-    
-    public function __construct() { }
-    
-    public function hydrateFromArray(array $data): void {
+
+    public function hydrateFromArray(array $data): void
+    {
         foreach ($data as $key => $value) {
             if (property_exists($this, $key)) {
                 $this->$key = $value;
             }
         }
     }
-    
-    public function __get($name) {
+
+    public function __get($name): Genre|null
+    {
         if ($name === 'genre') {
             if ($this->genre === null && $this->id_genre !== null) {
                 $this->genre = Genre::getOne($this->id_genre);
@@ -126,34 +134,37 @@ class Film extends Table {
         trigger_error("Undefined property: " . $name, E_USER_NOTICE);
         return null;
     }
-    
-    public static function getAll(?int $limit = null, ?int $offset = null): array {
+
+    public static function getAll(?int $limit = null, ?int $offset = null): array
+    {
         return parent::getAll($limit, $offset);
     }
-    
-    public static function getOne(int $id): ?static {
+
+    public static function getOne(int $id): ?static
+    {
         return parent::getOne($id);
     }
 }
 
-class Genre extends Table {
+class Genre extends Table
+{
     public static string $primaryKey = 'id_genre';
     public static string $tableName = 'genres';
-    
+
     public ?int $id_genre = null;
     public ?string $nom = null;
-    
-    public function __construct() { }
-    
-    public function hydrateFromArray(array $data): void {
+
+    public function hydrateFromArray(array $data): void
+    {
         foreach ($data as $key => $value) {
             if (property_exists($this, $key)) {
                 $this->$key = $value;
             }
         }
     }
-    
-    public function save(): void {
+
+    public function save(): void
+    {
         $link = DB::getConnection();
         $primaryKey = static::$primaryKey;
         $tableName = static::$tableName;
@@ -163,18 +174,18 @@ class Genre extends Table {
             $fields = [];
             foreach ($vars as $key => $value) {
                 if ($key !== $primaryKey) {
-                    $escapedValue = mysqli_real_escape_string($link, (string)$value);
+                    $escapedValue = mysqli_real_escape_string($link, (string) $value);
                     $fields[] = "$key = '$escapedValue'";
                 }
             }
-            $query .= implode(', ', $fields) . " WHERE $primaryKey = " . (int)$this->$primaryKey;
+            $query .= implode(', ', $fields) . " WHERE $primaryKey = " . (int) $this->$primaryKey;
         } else {
             $columns = [];
             $values = [];
             foreach ($vars as $key => $value) {
                 if ($key !== $primaryKey) {
                     $columns[] = $key;
-                    $values[] = "'" . mysqli_real_escape_string($link, (string)$value) . "'";
+                    $values[] = "'" . mysqli_real_escape_string($link, (string) $value) . "'";
                 }
             }
             $query = "INSERT INTO $tableName (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $values) . ")";
@@ -189,17 +200,17 @@ class Genre extends Table {
     }
 }
 
-class Distributeur extends Table {
+class Distributeur extends Table
+{
     public static string $primaryKey = 'id_distributeur';
     public static string $tableName = 'distributeurs';
-    
+
     public ?int $id_distributeur = null;
     public ?string $nom = null;
-    
-    public function __construct() { }
 }
 
-function renderPagination(int $currentPage, int $totalPages): string {
+function renderPagination(int $currentPage, int $totalPages): string
+{
     $html = '<div class="pagination">';
     if ($currentPage > 1) {
         $html .= '<a href="?p=' . ($currentPage - 1) . '" class="prev">&laquo; Précédent</a> ';
@@ -242,8 +253,10 @@ echo '<link rel="stylesheet" type="text/css" href="style.css">';
 if (!isset($_GET['page'])) {
     echo '<h1>Balek\'Flix</h1>';
     $maxPerPage = 12;
-    $currentPage = isset($_GET['p']) ? (int)$_GET['p'] : 1;
-    if ($currentPage < 1) { $currentPage = 1; }
+    $currentPage = isset($_GET['p']) ? (int) $_GET['p'] : 1;
+    if ($currentPage < 1) {
+        $currentPage = 1;
+    }
     $offset = ($currentPage - 1) * $maxPerPage;
     $totalFilms = Film::countAll();
     $totalPages = ceil($totalFilms / $maxPerPage);
@@ -260,7 +273,7 @@ if (!isset($_GET['page'])) {
     echo '</div>';
     echo renderPagination($currentPage, $totalPages);
 } elseif ($_GET['page'] == 'film') {
-    $film = Film::getOne((int)$_GET['id_film']);
+    $film = Film::getOne((int) $_GET['id_film']);
     if ($film) {
         echo '<h1>Détails du film "' . $film->titre . '"</h1>';
         echo '<pre>';
@@ -283,7 +296,7 @@ if (!isset($_GET['page'])) {
     }
     echo '</div>';
 } elseif ($_GET['page'] == 'genre') {
-    $genreData = Genre::getOne((int)$_GET['id_genre']);
+    $genreData = Genre::getOne((int) $_GET['id_genre']);
     if ($genreData) {
         echo '<h1>Détails du genre de film "' . $genreData->nom . '"</h1>';
         echo '<pre>';
@@ -301,7 +314,7 @@ if (!isset($_GET['page'])) {
 } elseif ($_GET['page'] == 'hydrate_film') {
     $film = Film::getOne(3571);
     if ($film) {
-        echo '<h1>Détails du film "' . $film->titre . '" (lazy loading)</h1>';
+        echo '<h1>Détails du film "' . $film->titre . '"</h1>';
         echo '<pre>';
         var_dump($film);
         echo '</pre>';

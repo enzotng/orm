@@ -94,6 +94,11 @@ a {
     text-transform: capitalize;
 }
 
+p>a:hover {
+    color: var(--black-color-75);
+    text-decoration: underline;
+}
+
 .grid-item>p>span {
     color: var(--black-color-75);
 }
