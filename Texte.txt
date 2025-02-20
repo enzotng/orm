@@ -1,0 +1,171 @@
+Ce fichier PHP implémente un ORM (Object-Relational Mapping) minimaliste qui récupère les données d’une base MySQL et les transforme en objets. Le code utilise exclusivement du lazy loading, c’est-à-dire que les relations (comme le genre associé à un film) sont chargées à la demande, uniquement lorsque vous y accédez. Voici une explication détaillée de chaque partie du code :
+
+---
+
+### 1. En-tête et Configuration de la Sortie
+
+```php
+header('Content-Type: text/html; charset=utf-8');
+```
+
+Cette instruction configure l’en-tête HTTP pour que le contenu soit interprété en HTML avec l’encodage UTF-8. Cela permet d’éviter les problèmes d’affichage liés aux caractères spéciaux.
+
+---
+
+### 2. La Classe DB
+
+La classe **DB** centralise la gestion de la connexion à la base de données et le suivi des requêtes SQL.
+
+- **Propriétés statiques :**
+  - `private static ?mysqli $connection` : stocke une instance unique (singleton) de la connexion MySQL.
+  - `public static array $queryLog` : un tableau qui enregistre toutes les requêtes SQL exécutées.
+  - `public static int $queryCount` : un compteur du nombre de requêtes effectuées.
+  - `public static float $totalTime` : accumule le temps d’exécution de toutes les requêtes.
+
+- **Méthode `getConnection()` :**
+  - Vérifie si une connexion existe déjà ; sinon, elle crée une nouvelle connexion à la base de données « cinema » en utilisant l’utilisateur « root ».
+  - En cas d’erreur de connexion, le script s’arrête avec un message d’erreur.
+  - La méthode définit l’encodage de la connexion en UTF-8 et retourne l’objet connexion.
+
+- **Méthode `query($sql)` :**
+  - Récupère la connexion via `getConnection()`.
+  - Mesure le temps avant et après l’exécution de la requête SQL avec `mysqli_query()`.
+  - Enregistre la requête dans le tableau `$queryLog`, incrémente le compteur `$queryCount` et ajoute la durée d’exécution au total.
+  - Retourne le résultat de la requête (qui peut être un objet `mysqli_result` ou `false` en cas d’échec).
+
+---
+
+### 3. La Classe Abstraite Table
+
+La classe **Table** est conçue pour être étendue par les classes représentant les différentes tables de la base de données (Film, Genre, Distributeur). Elle offre des méthodes génériques pour récupérer et compter les enregistrements.
+
+- **Propriétés statiques :**
+  - `$primaryKey` : la clé primaire de la table (à définir dans la classe enfant).
+  - `$tableName` : le nom de la table dans la base de données.
+
+- **Méthode `getAll($limit, $offset)` :**
+  - Construit une requête SQL pour sélectionner tous les enregistrements de la table.
+  - Si des paramètres de pagination sont fournis (`limit` et `offset`), ils sont ajoutés à la requête.
+  - Exécute la requête et, pour chaque ligne obtenue, crée un nouvel objet de la classe appelante grâce à `new static()`.
+  - Appelle la méthode `hydrateFromArray()` sur l’objet pour remplir ses propriétés avec les valeurs récupérées.
+  - Retourne un tableau d’objets (les data objects).
+
+- **Méthode `countAll()` :**
+  - Exécute une requête SQL qui compte le nombre total d’enregistrements dans la table et retourne ce nombre.
+
+- **Méthode `getOne($id)` :**
+  - Construit une requête SQL pour récupérer l’enregistrement dont la clé primaire correspond à `$id`.
+  - Si un enregistrement est trouvé, crée et hydrate un objet de la classe appelante, puis le retourne.
+
+---
+
+### 4. La Classe Film
+
+La classe **Film** représente la table "films" et étend **Table**. Elle définit des propriétés correspondant aux colonnes de la table et inclut une gestion lazy loading pour la relation avec la classe Genre.
+
+- **Propriétés d’instance :**
+  - Par exemple, `id_film`, `titre`, `resum`, `date_debut_affiche`, etc.
+  - La propriété privée `$genre` (de type `Genre`) n’est pas initialisée lors de l’hydratation, mais sera chargée à la demande.
+
+- **Méthode `hydrateFromArray()` :**
+  - Parcourt un tableau associatif et assigne les valeurs aux propriétés correspondantes de l’objet Film si elles existent.
+
+- **Méthode magique `__get($name)` :**
+  - Lorsqu’on tente d’accéder à la propriété `genre` (via `$film->genre`), si celle-ci est encore `null` et que `id_genre` est défini, la méthode appelle `Genre::getOne($this->id_genre)` pour charger l’objet Genre correspondant.
+  - Cela permet de réaliser le lazy loading : le genre n’est récupéré qu’au moment où il est demandé.
+
+- **Méthodes statiques `getAll()` et `getOne()` :**
+  - Ces méthodes appellent les méthodes correspondantes de la classe parente **Table**.
+  - Le lazy loading est appliqué : contrairement à l’eager loading, elles ne préchargent pas les genres ; ceux-ci seront chargés au moment de l’accès via `__get`.
+
+---
+
+### 5. La Classe Genre
+
+La classe **Genre** représente la table "genres" et étend **Table**.
+
+- **Propriétés d’instance :**
+  - Par exemple, `id_genre` et `nom`, qui correspondent aux colonnes de la table.
+
+- **Méthode `hydrateFromArray()` :**
+  - Remplit l’objet Genre avec les données d’un tableau associatif en assignant les valeurs aux propriétés correspondantes.
+
+- **Méthode `save()` :**
+  - Permet d’insérer un nouveau genre ou de mettre à jour un genre existant dans la base.
+  - Si la propriété correspondant à la clé primaire est déjà définie, une requête UPDATE est construite ; sinon, une requête INSERT est réalisée.
+  - Les valeurs sont sécurisées avec `mysqli_real_escape_string()`.
+  - La requête est exécutée via la méthode `DB::query()`.
+  - Si une insertion a eu lieu et que la clé primaire n’était pas définie, l’ID généré par MySQL est récupéré avec `mysqli_insert_id()` et assigné à l’objet.
+
+---
+
+### 6. La Classe Distributeur
+
+La classe **Distributeur** représente la table "distributeurs" et étend **Table**.
+
+- **Propriétés :**
+  - Elle définit ses propres propriétés, telles que `id_distributeur` et `nom`.
+  - Bien que le code ne montre pas d’opérations spécifiques pour cette classe, elle suit la même logique que les autres classes.
+
+---
+
+### 7. La Fonction renderPagination
+
+La fonction **renderPagination** génère le HTML d’une barre de pagination pour naviguer entre les pages.
+
+- **Fonctionnement :**
+  - Affiche un bouton "Précédent" cliquable si la page actuelle est supérieure à 1, sinon un span désactivé.
+  - Calcule une plage de numéros de page à afficher, en limitant le nombre total de liens à 5 et en centrant autant que possible le lien de la page courante.
+  - Pour chaque numéro de page de la plage, si le numéro correspond à la page actuelle, il est affiché dans un `<span>` avec les classes `current-page active` pour lui appliquer un style particulier (défini dans le CSS externe). Sinon, il est affiché comme lien cliquable.
+  - Affiche un bouton "Suivant" cliquable si la page actuelle n’est pas la dernière, sinon un span désactivé.
+  - Retourne le HTML généré.
+
+---
+
+### 8. Le Code de l’Application
+
+Le code principal utilise la valeur du paramètre `$_GET['page']` pour déterminer quelle partie de l’application afficher :
+
+- **Page d’accueil (liste des films) :**
+  - Si `page` n’est pas défini, le script affiche la liste des films.
+  - La pagination est gérée en définissant un nombre maximum d’éléments par page (ici 12) et en calculant l’offset en fonction du numéro de page récupéré via `$_GET['p']`.
+  - Le nombre total de films est obtenu avec `Film::countAll()`, et le nombre total de pages est calculé.
+  - La méthode `Film::getAll($maxPerPage, $offset)` est appelée. Ici, comme nous utilisons le lazy loading, les genres ne sont pas préchargés ; ils seront chargés à la demande (via `__get`).
+  - Les films sont affichés dans une grille HTML, chaque film étant enveloppé dans une balise `<a>` qui permet de naviguer vers la page de détails du film.
+  - La fonction `renderPagination()` est appelée pour afficher la barre de navigation en bas de la page.
+
+- **Page de détails d’un film :**
+  - Si `page=film` et `id_film` sont définis, le script récupère le film correspondant avec `Film::getOne()`.
+  - Grâce au lazy loading, lorsque vous accédez à `$film->genre`, le genre sera chargé uniquement à ce moment via la méthode magique `__get`.
+  - Les détails du film et, si disponible, le genre associé, sont affichés.
+
+- **Pages pour les genres :**
+  - La page `genres` affiche la liste de tous les genres en utilisant `Genre::getAll()`, présentée dans une grille.
+  - La page `genre` affiche les détails d’un genre spécifique récupéré avec `Genre::getOne()`.
+
+- **Pages de test supplémentaires :**
+  - La page `add_genre_raw_code` permet de tester l’insertion/mise à jour d’un genre.
+  - La page `hydrate_film` permet de tester la récupération d’un film (par exemple, avec l’ID 3571) et de vérifier le fonctionnement du lazy loading (le genre est chargé lorsqu’on y accède).
+
+---
+
+### 9. Lazy Loading
+
+Le lazy loading est réalisé via la méthode magique `__get()` dans la classe Film.  
+- Lorsque vous essayez d’accéder à la propriété `genre` d’un objet Film (par exemple `$film->genre`), si elle n’est pas encore définie et que l’ID du genre (`id_genre`) est disponible, le code appelle `Genre::getOne($this->id_genre)` pour récupérer le genre associé depuis la base de données.  
+- Ainsi, chaque film charge son genre uniquement lorsque c’est nécessaire, ce qui peut réduire le nombre de requêtes si vous n’avez pas besoin de tous les genres en même temps.
+
+---
+
+### Conclusion
+
+En résumé, ce code définit un ORM simple en PHP qui :
+
+- Gère la connexion et le suivi des requêtes SQL via la classe **DB**.
+- Utilise une classe abstraite **Table** pour fournir des méthodes génériques de récupération et de comptage des enregistrements.
+- Représente les tables "films", "genres" et "distributeurs" par des classes (**Film**, **Genre**, **Distributeur**) qui étendent **Table**.
+- Implémente le lazy loading pour les associations : le genre d’un film n’est chargé que lorsqu’on y accède (grâce à la méthode `__get` dans la classe Film).
+- Gère la pagination pour la liste des films et génère une barre de navigation avec la fonction `renderPagination()`.
+- Permet de tester diverses fonctionnalités (affichage de la liste, détails d’un film ou d’un genre, insertion de genre, etc.) via des paramètres dans l’URL.
+
+Ce code sert de base pour construire une application orientée objet en PHP en facilitant la manipulation des données de la base et en optimisant le chargement des relations grâce au lazy loading.

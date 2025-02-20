@@ -1,11 +1,13 @@
 <?php
 header('Content-Type: text/html; charset=utf-8');
+
 class DB
 {
     private static ?mysqli $connection = null;
     public static array $queryLog = [];
     public static int $queryCount = 0;
     public static float $totalTime = 0.0;
+
     public static function getConnection(): mysqli
     {
         if (self::$connection === null) {
@@ -17,6 +19,7 @@ class DB
         }
         return self::$connection;
     }
+
     public static function query(string $sql): mysqli_result|bool
     {
         $link = self::getConnection();
@@ -30,11 +33,13 @@ class DB
         return $result;
     }
 }
+
 abstract class Table
 {
     public static string $primaryKey;
     public static string $tableName;
-    public static function getAll(bool $eager = false, ?int $limit = null, ?int $offset = null): array
+
+    public static function getAll(?int $limit = null, ?int $offset = null): array
     {
         $tableName = static::$tableName;
         $sql = "SELECT * FROM $tableName";
@@ -56,6 +61,7 @@ abstract class Table
         }
         return $objects;
     }
+
     public static function countAll(): int
     {
         $tableName = static::$tableName;
@@ -67,6 +73,7 @@ abstract class Table
         $data = mysqli_fetch_assoc($res);
         return (int) $data['total'];
     }
+
     public static function getOne(int $id): ?static
     {
         $primaryKey = static::$primaryKey;
@@ -85,10 +92,12 @@ abstract class Table
         return null;
     }
 }
+
 class Film extends Table
 {
     public static string $primaryKey = 'id_film';
     public static string $tableName = 'films';
+
     public ?int $id_film = null;
     public ?int $id_genre = null;
     public ?int $id_distributeur = null;
@@ -98,10 +107,12 @@ class Film extends Table
     public ?string $date_fin_affiche = null;
     public ?int $duree_minutes = null;
     public ?int $annee_production = null;
-    public ?Genre $genre = null;
+    private ?Genre $genre = null;
+
     public function __construct()
     {
     }
+
     public function hydrateFromArray(array $data): void
     {
         foreach ($data as $key => $value) {
@@ -121,60 +132,30 @@ class Film extends Table
         trigger_error("Undefined property: " . $name, E_USER_NOTICE);
         return null;
     }
-    public static function getAll(bool $eager = true, ?int $limit = null, ?int $offset = null): array
+
+    public static function getAll(?int $limit = null, ?int $offset = null): array
     {
-        $films = parent::getAll($eager, $limit, $offset);
-        if ($eager) {
-            $genreIds = [];
-            foreach ($films as $film) {
-                if ($film->id_genre !== null) {
-                    $genreIds[] = $film->id_genre;
-                }
-            }
-            $genreIds = array_unique($genreIds);
-            if (count($genreIds) > 0) {
-                $ids = implode(',', $genreIds);
-                $sql = "SELECT * FROM " . Genre::$tableName . " WHERE " . Genre::$primaryKey . " IN ($ids)";
-                $res = DB::query($sql);
-                if (!$res) {
-                    die("Query failed: " . mysqli_error(DB::getConnection()));
-                }
-                $genreMap = [];
-                while ($row = mysqli_fetch_assoc($res)) {
-                    $genre = new Genre();
-                    $genre->hydrateFromArray($row);
-                    $genreMap[$genre->id_genre] = $genre;
-                }
-                foreach ($films as $film) {
-                    if (isset($genreMap[$film->id_genre])) {
-                        $film->genre = $genreMap[$film->id_genre];
-                    }
-                }
-            }
-        }
-        return $films;
+        return parent::getAll($limit, $offset);
     }
+
     public static function getOne(int $id): ?static
     {
-        $film = parent::getOne($id);
-        if ($film !== null && $film->id_genre !== null) {
-            $genre = Genre::getOne($film->id_genre);
-            if ($genre !== null) {
-                $film->genre = $genre;
-            }
-        }
-        return $film;
+        return parent::getOne($id);
     }
 }
+
 class Genre extends Table
 {
     public static string $primaryKey = 'id_genre';
     public static string $tableName = 'genres';
+
     public ?int $id_genre = null;
     public ?string $nom = null;
+
     public function __construct()
     {
     }
+
     public function hydrateFromArray(array $data): void
     {
         foreach ($data as $key => $value) {
@@ -183,6 +164,7 @@ class Genre extends Table
             }
         }
     }
+
     public function save(): void
     {
         $link = DB::getConnection();
@@ -219,16 +201,20 @@ class Genre extends Table
         }
     }
 }
+
 class Distributeur extends Table
 {
     public static string $primaryKey = 'id_distributeur';
     public static string $tableName = 'distributeurs';
+
     public ?int $id_distributeur = null;
     public ?string $nom = null;
+
     public function __construct()
     {
     }
 }
+
 function renderPagination(int $currentPage, int $totalPages): string
 {
     $html = '<div class="pagination">';
@@ -267,7 +253,9 @@ function renderPagination(int $currentPage, int $totalPages): string
     $html .= '</div>';
     return $html;
 }
+
 echo '<link rel="stylesheet" type="text/css" href="style.css">';
+
 if (!isset($_GET['page'])) {
     echo '<h1>Balek\'Flix</h1>';
     $maxPerPage = 12;
@@ -278,7 +266,7 @@ if (!isset($_GET['page'])) {
     $offset = ($currentPage - 1) * $maxPerPage;
     $totalFilms = Film::countAll();
     $totalPages = ceil($totalFilms / $maxPerPage);
-    $films = Film::getAll(true, $maxPerPage, $offset);
+    $films = Film::getAll($maxPerPage, $offset);
     echo '<div class="grid-container">';
     foreach ($films as $film) {
         echo '<a class="grid-item" href="?page=film&id_film=' . $film->id_film . '">';
@@ -305,7 +293,7 @@ if (!isset($_GET['page'])) {
     }
 } elseif ($_GET['page'] == 'genres') {
     echo '<h1>Liste des genres de films du cinéma</h1>';
-    $genreDataList = Genre::getAll(false);
+    $genreDataList = Genre::getAll();
     echo '<div class="grid-container">';
     foreach ($genreDataList as $genreData) {
         echo '<div class="grid-item">';
@@ -332,7 +320,7 @@ if (!isset($_GET['page'])) {
 } elseif ($_GET['page'] == 'hydrate_film') {
     $film = Film::getOne(3571);
     if ($film) {
-        echo '<h1>Détails du film "' . $film->titre . '" (eager loading)</h1>';
+        echo '<h1>Détails du film "' . $film->titre . '" (lazy loading)</h1>';
         echo '<pre>';
         var_dump($film);
         echo '</pre>';
